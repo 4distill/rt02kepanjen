@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Informasi RT 02 - Kepanjen, Jombang</title>
+    
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Dexie.js (IndexedDB Wrapper) -->
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- jsPDF & html2canvas for PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- Heroicons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Custom scrollbar for tables */
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #555; }
+        /* Chart container */
+        .chart-container { position: relative; height: 300px; }
+    </style>
+</head>
+<body class="bg-gray-100" x-data="app()">
+    
+    <!-- Loading Overlay -->
+    <div x-show="isLoading" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-white bg-opacity-90">
+        <div class="text-center">
+            <svg class="animate-spin h-12 w-12 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-4 text-gray-600 font-semibold">Memuat Aplikasi...</p>
+            <p class="text-sm text-gray-500">Mohon tunggu sebentar</p>
+        </div>
+    </div>
+
+    <!-- CRITICAL ERROR DISPLAY -->
+    <div x-show="initError" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-red-50 p-4">
+        <div class="bg-white rounded-lg shadow-2xl p-8 max-w-lg w-full border-l-4 border-red-500">
+            <div class="flex items-center mb-4">
+                <i class="fas fa-exclamation-triangle text-red-500 text-3xl mr-3"></i>
+                <h2 class="text-2xl font-bold text-red-800">Kesalahan Kritis</h2>
+            </div>
+            <p class="text-gray-700 mb-4">Aplikasi gagal dimuat karena masalah berikut:</p>
+            <div class="bg-gray-100 p-3 rounded-md mb-6">
+                <code class="text-sm text-red-600" x-text="initError"></code>
+            </div>
+            <p class="text-sm text-gray-600 mb-4">
+                <strong>Solusi yang mungkin:</strong><br>
+                1. Pastikan koneksi internet Anda stabil.<br>
+                2. Coba muat ulang halaman ini.<br>
+                3. Jika masalah berlanjut, hapus data penyimpanan browser (Clear Storage) untuk situs ini.
+            </p>
+            <button @click="location.reload()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition">
+                <i class="fas fa-sync-alt mr-2"></i>Muat Ulang Halaman
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="min-h-screen flex flex-col">
+        
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg" x-show="!showLoginPage && !initError">
+            <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-building text-2xl"></i>
+                    <div>
+                        <h1 class="text-xl font-bold">Sistem Informasi RT 02</h1>
+                        <p class="text-xs opacity-90">Kelurahan Kepanjen, Kabupaten Jombang</p>
+                    </div>
+                </div>
+                <nav class="flex items-center space-x-4">
+                    <template x-if="!isLoggedIn">
+                        <button @click="showLoginPage = true" class="bg-white text-blue-600 px-4 py-2 rounded-lg font-semibold hover:bg-blue-50 transition">
+                            <i class="fas fa-sign-in-alt mr-2"></i>Login
+                        </button>
+                    </template>
+                    <template x-if="isLoggedIn">
+                        <span class="text-sm">
+                            <i class="fas fa-user-circle mr-1"></i>
+                            <span x-text="currentUser.name"></span>
+                            <span class="text-xs opacity-75 ml-1">(<span x-text="currentUser.role"></span>)</span>
+                        </span>
+                        <button @click="logout()" class="bg-red-500 hover:bg-red-600 px-3 py-2 rounded-lg transition flex items-center" title="Logout">
+                            <i class="fas fa-sign-out-alt mr-2"></i>
+                            <span>Logout</span>
+                        </button>
+                    </template>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="flex-grow container mx-auto px-4 py-6" x-show="!initError">
+            
+            <!-- Public Page -->
+            <div x-show="!isLoggedIn && !showLoginPage" x-transition>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Main Content -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <!-- Slider Kegiatan -->
+                        <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                            <div class="relative h-64 bg-gray-200">
+                                <template x-for="(activity, index) in publicActivities" :key="activity.id">
+                                    <div x-show="currentSlide === index" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-x-full" x-transition:enter-end="opacity-100 transform translate-x-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 transform translate-x-0" x-transition:leave-end="opacity-0 transform -translate-x-full" class="absolute inset-0">
+                                        <img :src="activity.image" :alt="activity.title" class="w-full h-full object-cover">
+                                        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+                                            <h3 class="text-white text-xl font-bold" x-text="activity.title"></h3>
+                                            <p class="text-white/80 text-sm" x-text="activity.date"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Slider Controls -->
+                                <button @click="prevSlide()" class="absolute left-2 top-1/2 -translate-y-1/2 bg-white/30 hover:bg-white/50 text-white p-2 rounded-full">
+                                    <i class="fas fa-chevron-left"></i>
+                                </button>
+                                <button @click="nextSlide()" class="absolute right-2 top-1/2 -translate-y-1/2 bg-white/30 hover:bg-white/50 text-white p-2 rounded-full">
+                                    <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Informasi & Pendaftaran -->
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h2 class="text-2xl font-bold mb-4 text-gray-800">Selamat Datang di RT 02</h2>
+                            <p class="text-gray-600 mb-6">Portal resmi untuk informasi kependudukan dan iuran warga Rukun Tetangga 02. Kelola data, pantau pembayaran, dan ikuti kegiatan terbaru di lingkungan kita.</p>
+                            <button @click="showRegistrationModal = true" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition transform hover:scale-105">
+                                <i class="fas fa-user-plus mr-2"></i>Daftar Sebagai Warga
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Sidebar Stats -->
+                    <div class="space-y-6">
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-lg font-semibold mb-4 text-gray-700 border-b pb-2">Statistik RT 02</h3>
+                            <div class="space-y-4">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600"><i class="fas fa-users mr-2 text-blue-500"></i>Total Warga</span>
+                                    <span class="font-bold text-xl" x-text="stats.totalResidents"></span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600"><i class="fas fa-home mr-2 text-green-500"></i>Total KK</span>
+                                    <span class="font-bold text-xl" x-text="stats.totalKK"></span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600"><i class="fas fa-male mr-2 text-cyan-500"></i>Laki-laki</span>
+                                    <span class="font-bold text-xl" x-text="stats.totalMale"></span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600"><i class="fas fa-female mr-2 text-pink-500"></i>Perempuan</span>
+                                    <span class="font-bold text-xl" x-text="stats.totalFemale"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-lg font-semibold mb-4 text-gray-700 border-b pb-2">Kegiatan Terkini</h3>
+                            <ul class="space-y-3">
+                                <template x-for="activity in publicActivities.slice(0, 3)" :key="activity.id">
+                                    <li class="flex items-start space-x-3">
+                                        <i class="fas fa-calendar-check text-blue-500 mt-1"></i>
+                                        <div>
+                                            <p class="font-semibold text-sm" x-text="activity.title"></p>
+                                            <p class="text-xs text-gray-500" x-text="activity.date"></p>
+                                        </div>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Login Page -->
+            <div x-show="showLoginPage" x-transition class="flex items-center justify-center min-h-[calc(100vh-200px)]">
+                <div class="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md">
+                    <h2 class="text-3xl font-bold text-center mb-6 text-gray-800">Login</h2>
+                    <form @submit.prevent="login()">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-bold mb-2" for="username">Username</label>
+                            <input x-model="loginForm.username" class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" id="username" type="text" placeholder="Masukkan username" required>
+                        </div>
+                        <div class="mb-6">
+                            <label class="block text-gray-700 text-sm font-bold mb-2" for="password">Password</label>
+                            <input x-model="loginForm.password" class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" id="password" type="password" placeholder="Masukkan password" required>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <button type="submit" :disabled="isLoading" class="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-3 px-6 rounded-lg focus:outline-none focus:shadow-outline w-full transition flex items-center justify-center">
+                                <svg x-show="isLoading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span x-show="!isLoading">Masuk</span>
+                                <span x-show="isLoading">Memuat...</span>
+                            </button>
+                        </div>
+                    </form>
+                    <div class="mt-6 p-4 bg-blue-50 rounded-lg">
+                        <p class="text-sm text-blue-800 font-semibold">Akun Demo:</p>
+                        <p class="text-xs text-blue-700">Admin: <code>admin / admin123</code></p>
+                        <p class="text-xs text-blue-700">Warga: <code>warga / warga123</code></p>
+                    </div>
+                    <p class="text-center mt-4 text-gray-600 text-sm">
+                        Belum punya akun? <a href="#" @click="showRegistrationModal = true; showLoginPage = false;" class="text-blue-600 hover:underline font-semibold">Daftar di sini</a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Admin Dashboard -->
+            <div x-show="isLoggedIn && currentUser.role === 'admin'" x-transition>
+                <h2 class="text-2xl font-bold mb-6 text-gray-800">Dashboard Admin</h2>
+                
+                <!-- Admin Stats Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                        <div class="p-3 bg-blue-100 rounded-full mr-4">
+                            <i class="fas fa-users text-blue-600 text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">Total Warga</p>
+                            <p class="text-2xl font-bold text-gray-800" x-text="stats.totalResidents"></p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                        <div class="p-3 bg-green-100 rounded-full mr-4">
+                            <i class="fas fa-home text-green-600 text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">Total KK</p>
+                            <p class="text-2xl font-bold text-gray-800" x-text="stats.totalKK"></p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                        <div class="p-3 bg-yellow-100 rounded-full mr-4">
+                            <i class="fas fa-dollar-sign text-yellow-600 text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">Total Iuran (Bulan Ini)</p>
+                            <p class="text-2xl font-bold text-gray-800">Rp <span x-text="formatCurrency(stats.totalIuranThisMonth)"></span></p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                        <div class="p-3 bg-red-100 rounded-full mr-4">
+                            <i class="fas fa-receipt text-red-600 text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">Total Pengeluaran</p>
+                            <p class="text-2xl font-bold text-gray-800">Rp <span x-text="formatCurrency(stats.totalExpenses)"></span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Navigation Tabs -->
+                <div class="bg-white rounded-lg shadow-md mb-6">
+                    <nav class="flex flex-wrap">
+                        <button @click="adminTab = 'residents'" :class="{'bg-blue-600 text-white': adminTab === 'residents', 'text-gray-600 hover:bg-gray-100': adminTab !== 'residents'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-users mr-2"></i>Data Penduduk
+                        </button>
+                        <button @click="adminTab = 'dues'" :class="{'bg-blue-600 text-white': adminTab === 'dues', 'text-gray-600 hover:bg-gray-100': adminTab !== 'dues'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-dollar-sign mr-2"></i>Manajemen Iuran
+                        </button>
+                        <button @click="adminTab = 'expenses'" :class="{'bg-blue-600 text-white': adminTab === 'expenses', 'text-gray-600 hover:bg-gray-100': adminTab !== 'expenses'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-receipt mr-2"></i>Pengeluaran
+                        </button>
+                        <button @click="adminTab = 'activities'" :class="{'bg-blue-600 text-white': adminTab === 'activities', 'text-gray-600 hover:bg-gray-100': adminTab !== 'activities'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-calendar-alt mr-2"></i>Kegiatan
+                        </button>
+                        <button @click="adminTab = 'users'" :class="{'bg-blue-600 text-white': adminTab === 'users', 'text-gray-600 hover:bg-gray-100': adminTab !== 'users'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-user-cog mr-2"></i>Pengguna
+                        </button>
+                        <button @click="adminTab = 'reports'" :class="{'bg-blue-600 text-white': adminTab === 'reports', 'text-gray-600 hover:bg-gray-100': adminTab !== 'reports'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-file-alt mr-2"></i>Laporan Iuran
+                        </button>
+                        <button @click="adminTab = 'statistics'" :class="{'bg-blue-600 text-white': adminTab === 'statistics', 'text-gray-600 hover:bg-gray-100': adminTab !== 'statistics'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-chart-pie mr-2"></i>Statistik
+                        </button>
+                        <button @click="adminTab = 'backup'" :class="{'bg-blue-600 text-white': adminTab === 'backup', 'text-gray-600 hover:bg-gray-100': adminTab !== 'backup'}" class="px-6 py-3 font-semibold transition">
+                            <i class="fas fa-database mr-2"></i>Backup/Restore
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <!-- Residents Tab -->
+                    <div x-show="adminTab === 'residents'" x-transition>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold">Data Penduduk</h3>
+                            <button @click="openResidentModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                <i class="fas fa-plus mr-2"></i>Tambah Warga
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto custom-scrollbar">
+                            <table class="min-w-full leading-normal">
+                                <thead>
+                                    <tr class="bg-gray-100">
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">No. KK</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Nama</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Jenis Kelamin</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Agama</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Usia</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="resident in residents" :key="resident.id">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="resident.kkNumber"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm font-semibold" x-text="resident.name"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="resident.gender"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="resident.religion"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="calculateAge(resident.birthDate) + ' Tahun'"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm">
+                                                <button @click="openResidentModal(resident)" class="text-blue-600 hover:text-blue-900 mr-3"><i class="fas fa-edit"></i></button>
+                                                <button @click="deleteItem('residents', resident.id, resident.name)" class="text-red-600 hover:text-red-900"><i class="fas fa-trash"></i></button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Dues Tab -->
+                    <div x-show="adminTab === 'dues'" x-transition>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold">Manajemen Iuran</h3>
+                            <button @click="openDueModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                <i class="fas fa-plus mr-2"></i>Catat Pembayaran
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto custom-scrollbar">
+                            <table class="min-w-full leading-normal">
+                                <thead>
+                                    <tr class="bg-gray-100">
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Nama Warga</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Bulan</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tahun</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Jumlah</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="due in dues" :key="due.id">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="getResidentName(due.residentId)"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="due.month"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="due.year"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm">Rp <span x-text="formatCurrency(due.amount)"></span></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm">
+                                                <span :class="{'bg-green-100 text-green-800': due.status === 'lunas', 'bg-red-100 text-red-800': due.status === 'belum'}" class="px-2 py-1 rounded-full text-xs font-semibold" x-text="due.status"></span>
+                                            </td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm">
+                                                <button @click="openDueModal(due)" class="text-blue-600 hover:text-blue-900 mr-3"><i class="fas fa-edit"></i></button>
+                                                <button @click="deleteItem('dues', due.id, 'Pembayaran ' + getResidentName(due.residentId))" class="text-red-600 hover:text-red-900"><i class="fas fa-trash"></i></button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Expenses Tab -->
+                    <div x-show="adminTab === 'expenses'" x-transition>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold">Data Pengeluaran</h3>
+                            <button @click="openExpenseModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                <i class="fas fa-plus mr-2"></i>Tambah Pengeluaran
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto custom-scrollbar">
+                            <table class="min-w-full leading-normal">
+                                <thead>
+                                    <tr class="bg-gray-100">
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tanggal</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Keterangan</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Jumlah</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="expense in expenses" :key="expense.id">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="expense.date"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="expense.description"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm font-semibold">Rp <span x-text="formatCurrency(expense.amount)"></span></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm">
+                                                <button @click="openExpenseModal(expense)" class="text-blue-600 hover:text-blue-900 mr-3"><i class="fas fa-edit"></i></button>
+                                                <button @click="deleteItem('expenses', expense.id, expense.description)" class="text-red-600 hover:text-red-900"><i class="fas fa-trash"></i></button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Activities Tab -->
+                    <div x-show="adminTab === 'activities'" x-transition>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold">Data Kegiatan</h3>
+                            <button @click="openActivityModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                <i class="fas fa-plus mr-2"></i>Tambah Kegiatan
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <template x-for="activity in activities" :key="activity.id">
+                                <div class="border rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
+                                    <img :src="activity.image" :alt="activity.title" class="w-full h-40 object-cover">
+                                    <div class="p-4">
+                                        <h4 class="font-bold text-lg mb-1" x-text="activity.title"></h4>
+                                        <p class="text-sm text-gray-600 mb-2" x-text="activity.date"></p>
+                                        <p class="text-sm text-gray-700 mb-3" x-text="activity.description"></p>
+                                        <div class="flex justify-end space-x-2">
+                                            <button @click="openActivityModal(activity)" class="text-blue-600 hover:text-blue-900"><i class="fas fa-edit"></i></button>
+                                            <button @click="deleteItem('activities', activity.id, activity.title)" class="text-red-600 hover:text-red-900"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Users Tab -->
+                    <div x-show="adminTab === 'users'" x-transition>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold">Manajemen Pengguna</h3>
+                            <button @click="openUserModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                <i class="fas fa-plus mr-2"></i>Tambah Pengguna
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto custom-scrollbar">
+                            <table class="min-w-full leading-normal">
+                                <thead>
+                                    <tr class="bg-gray-100">
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Username</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Nama Warga</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Peran</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="user in users" :key="user.id">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="user.username"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="getResidentName(user.residentId)"></td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm">
+                                                <span :class="{'bg-purple-100 text-purple-800': user.role === 'admin', 'bg-gray-100 text-gray-800': user.role === 'warga'}" class="px-2 py-1 rounded-full text-xs font-semibold" x-text="user.role"></span>
+                                            </td>
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm">
+                                                <button @click="openUserModal(user)" class="text-blue-600 hover:text-blue-900 mr-3"><i class="fas fa-edit"></i></button>
+                                                <button @click="deleteItem('users', user.id, user.username)" class="text-red-600 hover:text-red-900"><i class="fas fa-trash"></i></button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Reports Tab -->
+                    <div x-show="adminTab === 'reports'" x-transition>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold">Laporan Iuran Warga Tahun <span x-text="reportYear"></span></h3>
+                            <div class="flex items-center space-x-2">
+                                <input type="number" x-model="reportYear" @change="generateReportData()" class="border rounded-lg px-3 py-2 w-24">
+                                <button @click="previewReport()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                    <i class="fas fa-eye mr-2"></i>Preview
+                                </button>
+                                <button @click="exportToExcel()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                    <i class="fas fa-file-excel mr-2"></i>Export Excel
+                                </button>
+                                <button @click="exportToPDF()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition">
+                                    <i class="fas fa-file-pdf mr-2"></i>Export PDF
+                                </button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto custom-scrollbar">
+                            <table class="min-w-full leading-normal" id="reportTable">
+                                <thead>
+                                    <tr class="bg-gray-100">
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider sticky left-0 bg-gray-100">Nama</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Jan</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Feb</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Mar</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Apr</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Mei</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Jun</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Jul</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Agu</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Sep</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Okt</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Nov</th>
+                                        <th class="px-5 py-3 border-b-2 border-gray-200 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Des</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="report in reportData" :key="report.residentId">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-5 py-3 border-b border-gray-200 text-sm font-semibold sticky left-0 bg-white" x-text="report.name"></td>
+                                            <template x-for="month in report.months" :key="month.name">
+                                                <td class="px-5 py-3 border-b border-gray-200 text-center text-sm">
+                                                    <span x-show="month.status === 'lunas'" class="text-green-600 font-bold text-lg">✓</span>
+                                                    <span x-show="month.status === 'belum'" class="text-red-600 font-bold text-lg">✗</span>
+                                                </td>
+                                            </template>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Statistics Tab -->
+                    <div x-show="adminTab === 'statistics'" x-transition>
+                        <h3 class="text-xl font-bold mb-6">Statistik Lengkap</h3>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white p-4 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold mb-2 text-center">Distribusi Jenis Kelamin</h4>
+                                <div class="chart-container">
+                                    <canvas id="genderChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold mb-2 text-center">Distribusi Agama</h4>
+                                <div class="chart-container">
+                                    <canvas id="religionChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg shadow lg:col-span-2">
+                                <h4 class="text-lg font-semibold mb-2 text-center">Distribusi Usia</h4>
+                                <div class="chart-container" style="height: 400px;">
+                                    <canvas id="ageChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Backup/Restore Tab -->
+                    <div x-show="adminTab === 'backup'" x-transition>
+                        <h3 class="text-xl font-bold mb-6">Backup & Restore Data</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-white p-6 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold mb-4">Buat Backup Baru</h4>
+                                <p class="text-sm text-gray-600 mb-4">Unduh seluruh data aplikasi ke dalam file JSON. Ini adalah cara terbaik untuk menyimpan cadangan data Anda.</p>
+                                <button @click="createBackup()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
+                                    <i class="fas fa-download mr-2"></i>Download Backup Sekarang
+                                </button>
+                                <div x-show="backupProgress" x-transition class="mt-4">
+                                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                        <div class="bg-blue-600 h-2.5 rounded-full" style="width: 100%"></div>
+                                    </div>
+                                    <p class="text-sm text-gray-600 mt-2 text-center">Membuat backup...</p>
+                                </div>
+                            </div>
+                            <div class="bg-white p-6 rounded-lg shadow">
+                                <h4 class="text-lg font-semibold mb-4">Restore dari File</h4>
+                                <p class="text-sm text-gray-600 mb-4">Pilih file backup JSON yang telah Anda unduh sebelumnya untuk mengembalikan data. <span class="font-bold text-red-600">Perhatian: Ini akan menghapus semua data saat ini!</span></p>
+                                <input type="file" @change="handleRestoreFile($event)" accept=".json" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Warga Dashboard -->
+            <div x-show="isLoggedIn && currentUser.role === 'warga'" x-transition>
+                <h2 class="text-2xl font-bold mb-6 text-gray-800">Dashboard Warga</h2>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Info Pribadi -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-xl font-bold mb-4 text-gray-800">Informasi Pribadi</h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-500">Nama Lengkap</p>
+                                    <p class="font-semibold" x-text="currentResident.name"></p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Nomor KK</p>
+                                    <p class="font-semibold" x-text="currentResident.kkNumber"></p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Jenis Kelamin</p>
+                                    <p class="font-semibold" x-text="currentResident.gender"></p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Agama</p>
+                                    <p class="font-semibold" x-text="currentResident.religion"></p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Tanggal Lahir</p>
+                                    <p class="font-semibold" x-text="currentResident.birthDate"></p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Usia</p>
+                                    <p class="font-semibold" x-text="calculateAge(currentResident.birthDate) + ' Tahun'"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-xl font-bold mb-4 text-gray-800">Riwayat Pembayaran Iuran</h3>
+                            <div class="overflow-x-auto custom-scrollbar">
+                                <table class="min-w-full leading-normal">
+                                    <thead>
+                                        <tr class="bg-gray-100">
+                                            <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Bulan</th>
+                                            <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tahun</th>
+                                            <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Jumlah</th>
+                                            <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                                            <th class="px-5 py-3 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tanggal Bayar</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="due in myDues" :key="due.id">
+                                            <tr class="hover:bg-gray-50">
+                                                <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="due.month"></td>
+                                                <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="due.year"></td>
+                                                <td class="px-5 py-3 border-b border-gray-200 text-sm">Rp <span x-text="formatCurrency(due.amount)"></span></td>
+                                                <td class="px-5 py-3 border-b border-gray-200 text-sm">
+                                                    <span :class="{'bg-green-100 text-green-800': due.status === 'lunas', 'bg-red-100 text-red-800': due.status === 'belum'}" class="px-2 py-1 rounded-full text-xs font-semibold" x-text="due.status"></span>
+                                                </td>
+                                                <td class="px-5 py-3 border-b border-gray-200 text-sm" x-text="due.paymentDate || '-'"></td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sidebar -->
+                    <div class="space-y-6">
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-lg font-semibold mb-4 text-gray-700 border-b pb-2">Status Pembayaran</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600">Bulan Ini</span>
+                                    <span :class="{'text-green-600': myCurrentMonthDue.status === 'lunas', 'text-red-600': myCurrentMonthDue.status === 'belum'}" class="font-bold">
+                                        <span x-show="myCurrentMonthDue.status === 'lunas'">LUNAS</span>
+                                        <span x-show="myCurrentMonthDue.status === 'belum'">BELUM LUNAS</span>
+                                    </span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600">Total Tahun Ini</span>
+                                    <span class="font-bold text-gray-800" x-text="myDues.filter(d => d.status === 'lunas').length + ' / ' + myDues.length"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-md p-6">
+                            <h3 class="text-lg font-semibold mb-4 text-gray-700 border-b pb-2">Kegiatan Terkini</h3>
+                            <ul class="space-y-3">
+                                <template x-for="activity in publicActivities.slice(0, 3)" :key="activity.id">
+                                    <li class="flex items-start space-x-3">
+                                        <i class="fas fa-calendar-check text-blue-500 mt-1"></i>
+                                        <div>
+                                            <p class="font-semibold text-sm" x-text="activity.title"></p>
+                                            <p class="text-xs text-gray-500" x-text="activity.date"></p>
+                                        </div>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-gray-800 text-white text-center py-4 mt-8" x-show="!showLoginPage && !initError">
+            <p class="text-sm">&copy; 2024 RT 02 Kelurahan Kepanjen, Jombang. All Rights Reserved.</p>
+        </footer>
+    </div>
+
+    <!-- Modals -->
+    <!-- Registration Modal -->
+    <div x-show="showRegistrationModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50" style="display: none;">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-lg bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4">Pendaftaran Warga Baru</h3>
+            <form @submit.prevent="register()">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-700">No. KK</label><input x-model="registrationForm.kkNumber" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Nama Lengkap</label><input x-model="registrationForm.name" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Jenis Kelamin</label>
+                        <select x-model="registrationForm.gender" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                            <option value="Laki-laki">Laki-laki</option>
+                            <option value="Perempuan">Perempuan</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-700">Agama</label>
+                        <select x-model="registrationForm.religion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                            <option value="Islam">Islam</option>
+                            <option value="Kristen">Kristen</option>
+                            <option value="Katolik">Katolik</option>
+                            <option value="Hindu">Hindu</option>
+                            <option value="Buddha">Buddha</option>
+                            <option value="Konghucu">Konghucu</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-700">Tanggal Lahir</label><input x-model="registrationForm.birthDate" type="date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Alamat</label><input x-model="registrationForm.address" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">No. HP</label><input x-model="registrationForm.phone" type="tel" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Username</label><input x-model="registrationForm.username" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div class="md:col-span-2"><label class="block text-sm font-medium text-gray-700">Password</label><input x-model="registrationForm.password" type="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" @click="showRegistrationModal = false; registrationForm = {}" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded-lg">Batal</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Daftar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- CRUD Modals (Resident, Due, Expense, Activity, User) -->
+    <!-- Resident Modal -->
+    <div x-show="showResidentModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50" style="display: none;">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-lg bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4" x-text="editingResident.id ? 'Edit Data Warga' : 'Tambah Data Warga'"></h3>
+            <form @submit.prevent="saveResident()">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-700">No. KK</label><input x-model="editingResident.kkNumber" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Nama Lengkap</label><input x-model="editingResident.name" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Jenis Kelamin</label><select x-model="editingResident.gender" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Agama</label><select x-model="editingResident.religion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required><option value="Islam">Islam</option><option value="Kristen">Kristen</option><option value="Katolik">Katolik</option><option value="Hindu">Hindu</option><option value="Buddha">Buddha</option><option value="Konghucu">Konghucu</option></select></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Tanggal Lahir</label><input x-model="editingResident.birthDate" type="date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Alamat</label><input x-model="editingResident.address" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div class="md:col-span-2"><label class="block text-sm font-medium text-gray-700">No. HP</label><input x-model="editingResident.phone" type="tel" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" @click="showResidentModal = false; editingResident = {}" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded-lg">Batal</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Due Modal -->
+    <div x-show="showDueModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50" style="display: none;">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-lg rounded-lg bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4" x-text="editingDue.id ? 'Edit Pembayaran Iuran' : 'Catat Pembayaran Iuran'"></h3>
+            <form @submit.prevent="saveDue()">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium text-gray-700">Warga</label>
+                        <select x-model="editingDue.residentId" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                            <option value="">-- Pilih Warga --</option>
+                            <template x-for="resident in residents" :key="resident.id">
+                                <option :value="resident.id" x-text="resident.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-700">Bulan</label><select x-model="editingDue.month" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required><option value="Januari">Januari</option><option value="Februari">Februari</option><option value="Maret">Maret</option><option value="April">April</option><option value="Mei">Mei</option><option value="Juni">Juni</option><option value="Juli">Juli</option><option value="Agustus">Agustus</option><option value="September">September</option><option value="Oktober">Oktober</option><option value="November">November</option><option value="Desember">Desember</option></select></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Tahun</label><input x-model="editingDue.year" type="number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Jumlah (Rp)</label><input x-model="editingDue.amount" type="number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Status</label>
+                        <select x-model="editingDue.status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                            <option value="lunas">Lunas</option>
+                            <option value="belum">Belum Lunas</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-700">Tanggal Bayar</label><input x-model="editingDue.paymentDate" type="date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"></div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" @click="showDueModal = false; editingDue = {}" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded-lg">Batal</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Expense Modal -->
+    <div x-show="showExpenseModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50" style="display: none;">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-lg rounded-lg bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4" x-text="editingExpense.id ? 'Edit Pengeluaran' : 'Tambah Pengeluaran'"></h3>
+            <form @submit.prevent="saveExpense()">
+                <div class="space-y-4">
+                    <div><label class="block text-sm font-medium text-gray-700">Tanggal</label><input x-model="editingExpense.date" type="date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Keterangan</label><input x-model="editingExpense.description" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Jumlah (Rp)</label><input x-model="editingExpense.amount" type="number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" @click="showExpenseModal = false; editingExpense = {}" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded-lg">Batal</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Activity Modal -->
+    <div x-show="showActivityModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50" style="display: none;">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-lg bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4" x-text="editingActivity.id ? 'Edit Kegiatan' : 'Tambah Kegiatan'"></h3>
+            <form @submit.prevent="saveActivity()">
+                <div class="space-y-4">
+                    <div><label class="block text-sm font-medium text-gray-700">Judul Kegiatan</label><input x-model="editingActivity.title" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Tanggal</label><input x-model="editingActivity.date" type="date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Deskripsi</label><textarea x-model="editingActivity.description" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" rows="3" required></textarea></div>
+                    <div><label class="block text-sm font-medium text-gray-700">URL Gambar</label><input x-model="editingActivity.image" type="url" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" placeholder="https://.../gambar.jpg" required></div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" @click="showActivityModal = false; editingActivity = {}" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded-lg">Batal</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- User Modal -->
+    <div x-show="showUserModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50" style="display: none;">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-lg rounded-lg bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4" x-text="editingUser.id ? 'Edit Pengguna' : 'Tambah Pengguna'"></h3>
+            <form @submit.prevent="saveUser()">
+                <div class="space-y-4">
+                    <div><label class="block text-sm font-medium text-gray-700">Username</label><input x-model="editingUser.username" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Password (Kosongkan jika tidak ingin mengubah)</label><input x-model="editingUser.password" type="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" :required="!editingUser.id"></div>
+                    <div><label class="block text-sm font-medium text-gray-700">Peran</label>
+                        <select x-model="editingUser.role" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                            <option value="admin">Admin</option>
+                            <option value="warga">Warga</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-sm font-medium text-gray-700">Warga Terkait</label>
+                        <select x-model="editingUser.residentId" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" required>
+                            <option value="">-- Pilih Warga --</option>
+                            <template x-for="resident in residents" :key="resident.id">
+                                <option :value="resident.id" x-text="resident.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" @click="showUserModal = false; editingUser = {}" class="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded-lg">Batal</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Report Preview Modal -->
+    <div x-show="showReportPreviewModal" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black bg-opacity-50 overflow-y-auto h-full w-full z-50" style="display: none;">
+        <div class="relative top-10 mx-auto p-5 border w-11/12 lg:w-5/6 shadow-lg rounded-lg bg-white" style="max-height: 90vh;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-900">Preview Laporan Iuran</h3>
+                <button @click="showReportPreviewModal = false" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-2xl"></i></button>
+            </div>
+            <div id="reportPreviewContent" class="overflow-y-auto custom-scrollbar" style="max-height: 70vh;">
+                <!-- Content will be dynamically generated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div x-show="notification.show" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed bottom-4 right-4 z-50">
+        <div :class="{'bg-green-500': notification.type === 'success', 'bg-red-500': notification.type === 'error', 'bg-blue-500': notification.type === 'info'}" class="text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <i :class="{'fa-check-circle': notification.type === 'success', 'fa-exclamation-circle': notification.type === 'error', 'fa-info-circle': notification.type === 'info'}" class="fas"></i>
+            <span x-text="notification.message"></span>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            // --- DATABASE SETUP ---
+            const db = new Dexie('db_rt02_jombang');
+            db.version(1).stores({
+                residents: '++id, kkNumber, name, gender, religion, birthDate, address, phone',
+                users: '++id, username, password, role, residentId',
+                dues: '++id, residentId, month, year, amount, status, paymentDate',
+                expenses: '++id, description, amount, date',
+                activities: '++id, title, description, date, image'
+            });
+
+            // --- ALPINE.JS DATA STORE ---
+            window.app = () => ({
+                // State
+                isLoading: true,
+                initError: '', // New state for critical errors
+                isLoggedIn: false,
+                showLoginPage: false,
+                currentUser: {},
+                currentResident: {},
+                adminTab: 'residents',
+                reportYear: new Date().getFullYear(),
+                currentSlide: 0,
+                notification: { show: false, message: '', type: 'success' },
+                backupProgress: false,
+
+                // Form states
+                loginForm: { username: '', password: '' },
+                registrationForm: {},
+                editingResident: {},
+                editingDue: {},
+                editingExpense: {},
+                editingActivity: {},
+                editingUser: {},
+
+                // Modal states
+                showRegistrationModal: false,
+                showResidentModal: false,
+                showDueModal: false,
+                showExpenseModal: false,
+                showActivityModal: false,
+                showUserModal: false,
+                showReportPreviewModal: false,
+
+                // Data arrays
+                residents: [],
+                users: [],
+                dues: [],
+                expenses: [],
+                activities: [],
+                reportData: [],
+                myDues: [],
+                myCurrentMonthDue: {},
+
+                // --- INITIALIZATION ---
+                async init() {
+                    console.log("App initialization started.");
+                    try {
+                        // 1. Check for required libraries
+                        if (typeof Dexie === 'undefined') {
+                            throw new Error('Library database (Dexie.js) tidak dapat dimuat. Periksa koneksi internet Anda.');
+                        }
+                        console.log("Dexie is available.");
+
+                        // 2. Seed initial data if DB is empty
+                        console.log("Seeding initial data...");
+                        await this.seedInitialData();
+                        console.log("Initial data seeded or already exists.");
+                        
+                        // 3. Load data into the app
+                        console.log("Loading data from DB...");
+                        await this.loadData();
+                        console.log("Data loaded from DB.");
+                        
+                        // 4. Check login status
+                        console.log("Checking login status...");
+                        this.checkLoginStatus();
+                        console.log("Login status checked.");
+                        
+                        // 5. Start auto-backup (non-critical, fire-and-forget)
+                        console.log("Starting auto-backup check...");
+                        this.startAutoBackup();
+                        console.log("Auto-backup check finished.");
+
+                    } catch (error) {
+                        console.error("A critical error occurred during initialization:", error);
+                        this.initError = error.message; // Set the error message to display
+                    } finally {
+                        // CRITICAL: Always ensure loading is set to false
+                        this.isLoading = false;
+                        console.log("App initialization finished.");
+                    }
+                },
+
+                // --- DATA LOADING ---
+                async loadData() {
+                    this.residents = await db.residents.orderBy('name').toArray();
+                    this.users = await db.users.toArray();
+                    this.dues = await db.dues.orderBy('[residentId+year+month]').toArray();
+                    this.expenses = await db.expenses.orderBy('date').reverse().toArray();
+                    this.activities = await db.activities.orderBy('date').reverse().toArray();
+                    await this.updateStats();
+                    if (this.isLoggedIn && this.currentUser.role === 'warga') {
+                        await this.loadWargaData();
+                    }
+                    if (this.isLoggedIn && this.currentUser.role === 'admin' && this.adminTab === 'statistics') {
+                        this.$nextTick(() => this.renderCharts());
+                    }
+                    if (this.isLoggedIn && this.currentUser.role === 'admin' && this.adminTab === 'reports') {
+                        this.generateReportData();
+                    }
+                },
+
+                async loadWargaData() {
+                    this.currentResident = this.residents.find(r => r.id === this.currentUser.residentId) || {};
+                    this.myDues = this.dues.filter(d => d.residentId === this.currentUser.residentId).sort((a,b) => new Date(b.year+'-'+b.month) - new Date(a.year+'-'+a.month));
+                    const now = new Date();
+                    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                    this.myCurrentMonthDue = this.myDues.find(d => d.month === monthNames[now.getMonth()] && d.year == now.getFullYear()) || { status: 'belum' };
+                },
+
+                // --- AUTHENTICATION ---
+                checkLoginStatus() {
+                    const loggedInUser = localStorage.getItem('rt02_user');
+                    if (loggedInUser) {
+                        this.currentUser = JSON.parse(loggedInUser);
+                        this.isLoggedIn = true;
+                        this.showLoginPage = false;
+                        if (this.currentUser.role === 'warga') this.loadWargaData();
+                    }
+                },
+
+                async login() {
+                    if (this.isLoading) {
+                        this.showNotification('Aplikasi masih memuat, silakan tunggu.', 'info');
+                        return;
+                    }
+                    const user = await db.users.where('username').equals(this.loginForm.username).first();
+                    if (user && user.password === this.loginForm.password) {
+                        this.isLoggedIn = true;
+                        this.currentUser = { ...user, password: '' };
+                        localStorage.setItem('rt02_user', JSON.stringify(this.currentUser));
+                        this.showLoginPage = false;
+                        this.showNotification('Login berhasil!', 'success');
+                        if (this.currentUser.role === 'warga') this.loadWargaData();
+                    } else {
+                        this.showNotification('Username atau password salah.', 'error');
+                    }
+                },
+
+                logout() {
+                    if (confirm('Apakah Anda yakin ingin keluar?')) {
+                        this.isLoggedIn = false;
+                        this.currentUser = {};
+                        this.currentResident = {};
+                        localStorage.removeItem('rt02_user');
+                        this.showLoginPage = true; // Explicitly show login page
+                        this.showNotification('Anda telah logout.', 'info');
+                    }
+                },
+
+                async register() {
+                    try {
+                        const residentId = await db.residents.add(this.registrationForm);
+                        await db.users.add({
+                            username: this.registrationForm.username,
+                            password: this.registrationForm.password,
+                            role: 'warga',
+                            residentId: residentId
+                        });
+                        this.showRegistrationModal = false;
+                        this.registrationForm = {};
+                        this.showNotification('Pendaftaran berhasil! Silakan login.', 'success');
+                        await this.loadData();
+                    } catch (error) {
+                        this.showNotification('Pendaftaran gagal. Username mungkin sudah ada.', 'error');
+                    }
+                },
+
+                // --- CRUD OPERATIONS ---
+                openResidentModal(resident = null) {
+                    this.editingResident = resident ? { ...resident } : {};
+                    this.showResidentModal = true;
+                },
+                async saveResident() {
+                    if (this.editingResident.id) {
+                        await db.residents.update(this.editingResident.id, this.editingResident);
+                    } else {
+                        await db.residents.add(this.editingResident);
+                    }
+                    this.showResidentModal = false;
+                    this.editingResident = {};
+                    this.showNotification('Data warga berhasil disimpan.', 'success');
+                    await this.loadData();
+                },
+
+                openDueModal(due = null) {
+                    this.editingDue = due ? { ...due } : { year: new Date().getFullYear(), amount: 25000, status: 'lunas', paymentDate: new Date().toISOString().split('T')[0] };
+                    this.showDueModal = true;
+                },
+                async saveDue() {
+                    if (this.editingDue.id) {
+                        await db.dues.update(this.editingDue.id, this.editingDue);
+                    } else {
+                        await db.dues.add(this.editingDue);
+                    }
+                    this.showDueModal = false;
+                    this.editingDue = {};
+                    this.showNotification('Data iuran berhasil disimpan.', 'success');
+                    await this.loadData();
+                },
+
+                openExpenseModal(expense = null) {
+                    this.editingExpense = expense ? { ...expense } : { date: new Date().toISOString().split('T')[0] };
+                    this.showExpenseModal = true;
+                },
+                async saveExpense() {
+                    if (this.editingExpense.id) {
+                        await db.expenses.update(this.editingExpense.id, this.editingExpense);
+                    } else {
+                        await db.expenses.add(this.editingExpense);
+                    }
+                    this.showExpenseModal = false;
+                    this.editingExpense = {};
+                    this.showNotification('Data pengeluaran berhasil disimpan.', 'success');
+                    await this.loadData();
+                },
+
+                openActivityModal(activity = null) {
+                    this.editingActivity = activity ? { ...activity } : { date: new Date().toISOString().split('T')[0], image: `https://picsum.photos/seed/${Math.random()}/800/400.jpg` };
+                    this.showActivityModal = true;
+                },
+                async saveActivity() {
+                    if (this.editingActivity.id) {
+                        await db.activities.update(this.editingActivity.id, this.editingActivity);
+                    } else {
+                        await db.activities.add(this.editingActivity);
+                    }
+                    this.showActivityModal = false;
+                    this.editingActivity = {};
+                    this.showNotification('Data kegiatan berhasil disimpan.', 'success');
+                    await this.loadData();
+                },
+
+                openUserModal(user = null) {
+                    this.editingUser = user ? { ...user, password: '' } : { role: 'warga' };
+                    this.showUserModal = true;
+                },
+                async saveUser() {
+                    if (this.editingUser.id) {
+                        if (this.editingUser.password) {
+                            await db.users.update(this.editingUser.id, { username: this.editingUser.username, password: this.editingUser.password, role: this.editingUser.role, residentId: this.editingUser.residentId });
+                        } else {
+                            await db.users.update(this.editingUser.id, { username: this.editingUser.username, role: this.editingUser.role, residentId: this.editingUser.residentId });
+                        }
+                    } else {
+                        await db.users.add(this.editingUser);
+                    }
+                    this.showUserModal = false;
+                    this.editingUser = {};
+                    this.showNotification('Data pengguna berhasil disimpan.', 'success');
+                    await this.loadData();
+                },
+
+                async deleteItem(table, id, name) {
+                    if (confirm(`Apakah Anda yakin ingin menghapus "${name}"?`)) {
+                        await db[table].delete(id);
+                        this.showNotification('Data berhasil dihapus.', 'success');
+                        await this.loadData();
+                    }
+                },
+
+                // --- STATISTICS & REPORTS ---
+                stats: { totalResidents: 0, totalKK: 0, totalMale: 0, totalFemale: 0, totalIuranThisMonth: 0, totalExpenses: 0 },
+                async updateStats() {
+                    this.stats.totalResidents = this.residents.length;
+                    this.stats.totalKK = new Set(this.residents.map(r => r.kkNumber)).size;
+                    this.stats.totalMale = this.residents.filter(r => r.gender === 'Laki-laki').length;
+                    this.stats.totalFemale = this.residents.filter(r => r.gender === 'Perempuan').length;
+                    
+                    const now = new Date();
+                    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                    const currentMonthDues = this.dues.filter(d => d.month === monthNames[now.getMonth()] && d.year == now.getFullYear() && d.status === 'lunas');
+                    this.stats.totalIuranThisMonth = currentMonthDues.reduce((sum, d) => sum + d.amount, 0);
+                    this.stats.totalExpenses = this.expenses.reduce((sum, e) => sum + e.amount, 0);
+                },
+
+                generateReportData() {
+                    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                    this.reportData = this.residents.map(resident => {
+                        const months = monthNames.map(month => {
+                            const due = this.dues.find(d => d.residentId === resident.id && d.month === month && d.year == this.reportYear);
+                            return { name: month, status: due ? due.status : 'belum' };
+                        });
+                        return { residentId: resident.id, name: resident.name, months };
+                    });
+                },
+
+                previewReport() {
+                    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                    let html = `
+                        <div class="p-8">
+                            <h1 class="text-2xl font-bold text-center mb-4">Laporan Iuran Warga RT 02</h1>
+                            <p class="text-center mb-6">Kelurahan Kepanjen, Kabupaten Jombang - Tahun ${this.reportYear}</p>
+                            <p class="text-sm text-gray-600 mb-6">Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
+                            <table class="min-w-full leading-normal border-collapse border border-gray-300">
+                                <thead>
+                                    <tr class="bg-gray-100">
+                                        <th class="border border-gray-300 px-4 py-2 text-left">Nama</th>
+                                        ${monthNames.map(m => `<th class="border border-gray-300 px-4 py-2 text-center">${m}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.reportData.map(report => `
+                                        <tr>
+                                            <td class="border border-gray-300 px-4 py-2 font-semibold">${report.name}</td>
+                                            ${report.months.map(m => `<td class="border border-gray-300 px-4 py-2 text-center">${m.status === 'lunas' ? '✓' : '✗'}</td>`).join('')}
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                    document.getElementById('reportPreviewContent').innerHTML = html;
+                    this.showReportPreviewModal = true;
+                },
+
+                exportToExcel() {
+                    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                    const ws_data = [
+                        ["Laporan Iuran Warga RT 02"],
+                        [`Kelurahan Kepanjen, Kabupaten Jombang - Tahun ${this.reportYear}`],
+                        [],
+                        ["Nama", ...monthNames],
+                        ...this.reportData.map(report => [report.name, ...report.months.map(m => m.status === 'lunas' ? 'LUNAS' : 'BELUM')])
+                    ];
+                    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Laporan Iuran");
+                    XLSX.writeFile(wb, `Laporan_Iuran_RT02_${this.reportYear}.xlsx`);
+                    this.showNotification('Laporan berhasil diekspor ke Excel.', 'success');
+                },
+
+                async exportToPDF() {
+                    this.previewReport();
+                    await this.$nextTick();
+                    const element = document.getElementById('reportPreviewContent');
+                    html2canvas(element).then(canvas => {
+                        const imgData = canvas.toDataURL('image/png');
+                        const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+                        const imgWidth = 210;
+                        const pageHeight = 295;
+                        const imgHeight = canvas.height * imgWidth / canvas.width;
+                        let heightLeft = imgHeight;
+                        let position = 0;
+
+                        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                        heightLeft -= pageHeight;
+
+                        while (heightLeft >= 0) {
+                            position = heightLeft - imgHeight;
+                            pdf.addPage();
+                            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                            heightLeft -= pageHeight;
+                        }
+                        pdf.save(`Laporan_Iuran_RT02_${this.reportYear}.pdf`);
+                        this.showNotification('Laporan berhasil diekspor ke PDF.', 'success');
+                    });
+                },
+
+                renderCharts() {
+                    const genderCtx = document.getElementById('genderChart');
+                    if (genderCtx) {
+                        new Chart(genderCtx, {
+                            type: 'pie',
+                            data: {
+                                labels: ['Laki-laki', 'Perempuan'],
+                                datasets: [{ data: [this.stats.totalMale, this.stats.totalFemale], backgroundColor: ['#3B82F6', '#EC4899'] }]
+                            }
+                        });
+                    }
+                    const religionCtx = document.getElementById('religionChart');
+                    if (religionCtx) {
+                        const religionCounts = this.residents.reduce((acc, r) => { acc[r.religion] = (acc[r.religion] || 0) + 1; return acc; }, {});
+                        new Chart(religionCtx, {
+                            type: 'pie',
+                            data: {
+                                labels: Object.keys(religionCounts),
+                                datasets: [{ data: Object.values(religionCounts), backgroundColor: ['#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6B7280', '#06B6D4'] }]
+                            }
+                        });
+                    }
+                    const ageCtx = document.getElementById('ageChart');
+                    if (ageCtx) {
+                        const ageGroups = { '0-12': 0, '13-18': 0, '19-35': 0, '36-55': 0, '>55': 0 };
+                        this.residents.forEach(r => {
+                            const age = this.calculateAge(r.birthDate);
+                            if (age <= 12) ageGroups['0-12']++;
+                            else if (age <= 18) ageGroups['13-18']++;
+                            else if (age <= 35) ageGroups['19-35']++;
+                            else if (age <= 55) ageGroups['36-55']++;
+                            else ageGroups['>55']++;
+                        });
+                        new Chart(ageCtx, {
+                            type: 'bar',
+                            data: {
+                                labels: Object.keys(ageGroups),
+                                datasets: [{ label: 'Jumlah Warga', data: Object.values(ageGroups), backgroundColor: '#3B82F6' }]
+                            }
+                        });
+                    }
+                },
+
+                // --- BACKUP & RESTORE ---
+                async createBackup() {
+                    this.backupProgress = true;
+                    const allData = {
+                        residents: await db.residents.toArray(),
+                        users: await db.users.toArray(),
+                        dues: await db.dues.toArray(),
+                        expenses: await db.expenses.toArray(),
+                        activities: await db.activities.toArray(),
+                        timestamp: new Date().toISOString()
+                    };
+                    const dataStr = JSON.stringify(allData, null, 2);
+                    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                    const exportFileDefaultName = `backup_rt02_${new Date().toISOString().split('T')[0]}.json`;
+                    const linkElement = document.createElement('a');
+                    linkElement.setAttribute('href', dataUri);
+                    linkElement.setAttribute('download', exportFileDefaultName);
+                    linkElement.click();
+                    this.backupProgress = false;
+                    this.showNotification('Backup berhasil diunduh.', 'success');
+                },
+
+                async handleRestoreFile(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    if (confirm('PERHATIAN: Ini akan menghapus SEMUA data saat ini dan menggantinya dengan data dari file backup. Lanjutkan?')) {
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                            try {
+                                const data = JSON.parse(e.target.result);
+                                await db.transaction('rw', db.residents, db.users, db.dues, db.expenses, db.activities, async () => {
+                                    await db.residents.clear();
+                                    await db.users.clear();
+                                    await db.dues.clear();
+                                    await db.expenses.clear();
+                                    await db.activities.clear();
+                                    await db.residents.bulkAdd(data.residents || []);
+                                    await db.users.bulkAdd(data.users || []);
+                                    await db.dues.bulkAdd(data.dues || []);
+                                    await db.expenses.bulkAdd(data.expenses || []);
+                                    await db.activities.bulkAdd(data.activities || []);
+                                });
+                                this.showNotification('Data berhasil dipulihkan.', 'success');
+                                await this.loadData();
+                                this.logout();
+                            } catch (error) {
+                                this.showNotification('Gagal memulihkan data. File mungkin rusak.', 'error');
+                            }
+                        };
+                        reader.readAsText(file);
+                    }
+                },
+
+                startAutoBackup() {
+                    const lastBackup = localStorage.getItem('rt02_lastBackup');
+                    const today = new Date().toDateString();
+                    if (lastBackup !== today) {
+                        this.createBackup();
+                        localStorage.setItem('rt02_lastBackup', today);
+                    }
+                },
+
+                // --- HELPERS ---
+                getResidentName(id) {
+                    const resident = this.residents.find(r => r.id === id);
+                    return resident ? resident.name : 'N/A';
+                },
+                calculateAge(birthDate) {
+                    const today = new Date();
+                    const birth = new Date(birthDate);
+                    let age = today.getFullYear() - birth.getFullYear();
+                    const m = today.getMonth() - birth.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+                        age--;
+                    }
+                    return age;
+                },
+                formatCurrency(amount) {
+                    return new Intl.NumberFormat('id-ID').format(amount);
+                },
+                showNotification(message, type = 'success') {
+                    this.notification = { show: true, message, type };
+                    setTimeout(() => this.notification.show = false, 3000);
+                },
+                nextSlide() {
+                    this.currentSlide = (this.currentSlide + 1) % this.publicActivities.length;
+                },
+                prevSlide() {
+                    this.currentSlide = (this.currentSlide - 1 + this.publicActivities.length) % this.publicActivities.length;
+                },
+
+                // --- COMPUTED PROPERTIES ---
+                get publicActivities() {
+                    return this.activities.slice(0, 5);
+                }
+            });
+
+            // --- SEED INITIAL DATA ---
+            async function seedInitialData() {
+                const userCount = await db.users.count();
+                if (userCount > 0) {
+                    console.log("Database already contains data. Skipping seeding.");
+                    return;
+                }
+
+                console.log("Database is empty. Starting to seed initial data...");
+                try {
+                    await db.residents.bulkAdd([
+                        { kkNumber: '3517120101010001', name: 'Ahmad Fauzi', gender: 'Laki-laki', religion: 'Islam', birthDate: '1980-05-15', address: 'Jl. Merdeka No. 1', phone: '08123456789' },
+                        { kkNumber: '3517120101010002', name: 'Siti Nurhaliza', gender: 'Perempuan', religion: 'Islam', birthDate: '1985-07-20', address: 'Jl. Merdeka No. 2', phone: '08234567890' },
+                        { kkNumber: '3517120101010003', name: 'Budi Santoso', gender: 'Laki-laki', religion: 'Kristen', birthDate: '1990-11-30', address: 'Jl. Sudirman No. 5', phone: '08345678901' },
+                        { kkNumber: '3517120101010004', name: 'Dewi Lestari', gender: 'Perempuan', religion: 'Islam', birthDate: '1992-02-10', address: 'Jl. Sudirman No. 6', phone: '08456789012' },
+                        { kkNumber: '3517120101010001', name: 'Rina Wijaya', gender: 'Perempuan', religion: 'Islam', birthDate: '2005-09-25', address: 'Jl. Merdeka No. 1', phone: '08567890123' },
+                    ]);
+                    await db.users.bulkAdd([
+                        { username: 'admin', password: 'admin123', role: 'admin', residentId: 1 },
+                        { username: 'warga', password: 'warga123', role: 'warga', residentId: 2 },
+                    ]);
+                    await db.dues.bulkAdd([
+                        { residentId: 1, month: 'Januari', year: 2024, amount: 25000, status: 'lunas', paymentDate: '2024-01-10' },
+                        { residentId: 2, month: 'Januari', year: 2024, amount: 25000, status: 'lunas', paymentDate: '2024-01-12' },
+                        { residentId: 3, month: 'Januari', year: 2024, amount: 25000, status: 'belum' },
+                        { residentId: 1, month: 'Februari', year: 2024, amount: 25000, status: 'lunas', paymentDate: '2024-02-08' },
+                        { residentId: 2, month: 'Februari', year: 2024, amount: 25000, status: 'belum' },
+                    ]);
+                    await db.expenses.bulkAdd([
+                        { description: 'Beli sapu dan pel', amount: 150000, date: '2024-01-15' },
+                        { description: 'Biaya listrik lampu jalan', amount: 300000, date: '2024-02-05' },
+                    ]);
+                    await db.activities.bulkAdd([
+                        { title: 'Kerja Bakti', description: 'Membersihkan lingkungan RT', date: '2024-01-28', image: 'https://picsum.photos/seed/kerjabakti/800/400.jpg' },
+                        { title: 'Rapat Rutin', description: 'Pembahasan program kerja RT', date: '2024-02-10', image: 'https://picsum.photos/seed/rapat/800/400.jpg' },
+                        { title: 'Pesta Warga', description: 'Syukuran 17 Agustus', date: '2024-08-17', image: 'https://picsum.photos/seed/pesta/800/400.jpg' },
+                    ]);
+                    console.log("Seeding complete.");
+                } catch (error) {
+                    console.error("Error during data seeding:", error);
+                    // Propagate error to be caught by init()
+                    throw new Error("Gagal mengisi data awal. Coba hapus penyimpanan browser (clear storage) dan muat ulang halaman.");
+                }
+            }
+        });
+    </script>
+</body>
+</html>
